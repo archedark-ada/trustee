@@ -151,28 +151,53 @@ class X402PaymentClient:
         result = client.pay(url="https://api.example.com/data")
     """
 
-    def __init__(self, account: LocalAccount, config: X402Config):
-        self.account = account
-        self.config = config
-        self._signer = EthAccountSigner(account)
+    def __init__(self, account: Optional[LocalAccount] = None, config: Optional[X402Config] = None, signer: Any = None):
+        """
+        Create an x402 payment client.
+
+        Args:
+            account: eth-account LocalAccount (direct key access)
+            config: X402 configuration
+            signer: Any object implementing ClientEvmSigner protocol
+                    (e.g., BagmanSigner for secure session-based access)
+
+        Provide either `account` or `signer`, not both.
+        """
+        self.config = config or X402Config()
+
+        if signer is not None:
+            self._signer = signer
+        elif account is not None:
+            self._signer = EthAccountSigner(account)
+        else:
+            raise ValueError("Provide either account or signer")
+
         self._x402_client = x402ClientSync()
         self._x402_client.register(
-            config.network.value,
+            self.config.network.value,
             ExactEvmScheme(signer=self._signer),
         )
         self._http_handler = x402HTTPClientSync(client=self._x402_client)
-        self._http = httpx.Client(timeout=config.timeout_seconds)
+        self._http = httpx.Client(timeout=self.config.timeout_seconds)
 
     @classmethod
     def from_private_key(
         cls, private_key: str, config: Optional[X402Config] = None,
     ) -> "X402PaymentClient":
         account = Account.from_key(private_key)
-        return cls(account=account, config=config or X402Config())
+        return cls(account=account, config=config)
+
+    @classmethod
+    def from_bagman_session(
+        cls, bagman: Any, session_id: str, config: Optional[X402Config] = None,
+    ) -> "X402PaymentClient":
+        """Create client from a Bagman session (secure, key never exposed)."""
+        signer = bagman.get_signer(session_id)
+        return cls(signer=signer, config=config)
 
     @property
     def address(self) -> str:
-        return self.account.address
+        return self._signer.address
 
     def pay(self, url: str, method: str = "GET", **kwargs) -> X402PaymentResult:
         """
