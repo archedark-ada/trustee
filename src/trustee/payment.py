@@ -22,6 +22,7 @@ from typing import Optional
 from .mandate import Mandate, verify_mandate
 from .budget import BudgetTracker
 from .audit import AuditTrail, EventType
+from .x402_client import X402PaymentClient, X402PaymentResult, X402Config, Network
 
 
 @dataclass
@@ -70,10 +71,12 @@ class PaymentExecutor:
         budget: BudgetTracker,
         audit: AuditTrail,
         dry_run: bool = False,
+        x402_client: Optional[X402PaymentClient] = None,
     ):
         self.budget = budget
         self.audit = audit
         self.dry_run = dry_run
+        self.x402_client = x402_client
     
     def execute(
         self,
@@ -148,9 +151,29 @@ class PaymentExecutor:
         
         if self.dry_run:
             x402_id = f"dry-run-{tx_id}"
+        elif self.x402_client and request.merchant_endpoint:
+            # Real x402 payment via official SDK
+            x402_result = self.x402_client.pay(
+                url=request.merchant_endpoint,
+                method="GET",
+            )
+            if not x402_result.success:
+                self.audit.log(
+                    EventType.PAYMENT_COMPLETED,
+                    mandate_id=mandate.mandate_id,
+                    amount_usd=request.amount_usd,
+                    merchant=request.merchant,
+                    success=False,
+                    reason=f"x402 payment failed: {x402_result.error}",
+                )
+                return PaymentResult(
+                    success=False,
+                    tx_id=tx_id,
+                    reason=f"x402 payment failed: {x402_result.error}",
+                    amount_usd=request.amount_usd,
+                )
+            x402_id = x402_result.payment_id or f"x402-{tx_id}"
         else:
-            # In production, this would call x402:
-            # x402_id = _execute_x402_payment(request, mandate)
             x402_id = _mock_x402_payment(request)
         
         # Step 4: Record transaction

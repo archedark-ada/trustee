@@ -1,0 +1,73 @@
+"""Tests for x402 payment client integration."""
+
+import pytest
+from eth_account import Account
+
+from trustee.x402_client import X402PaymentClient, X402Config, Network, X402PaymentResult
+
+
+class TestX402Config:
+    def test_defaults(self):
+        config = X402Config()
+        assert config.network == Network.BASE_SEPOLIA
+        assert config.max_amount_usd == 10.0
+        assert "x402.org" in config.effective_facilitator_url
+
+    def test_mainnet(self):
+        config = X402Config(network=Network.BASE_MAINNET)
+        assert config.network == Network.BASE_MAINNET
+
+    def test_custom_facilitator(self):
+        config = X402Config(facilitator_url="https://custom.facilitator.com")
+        assert config.effective_facilitator_url == "https://custom.facilitator.com"
+
+
+class TestX402PaymentClient:
+    @pytest.fixture
+    def agent_key(self):
+        return Account.create()
+
+    @pytest.fixture
+    def client(self, agent_key):
+        config = X402Config(network=Network.BASE_SEPOLIA)
+        c = X402PaymentClient(account=agent_key, config=config)
+        yield c
+        c.close()
+
+    def test_from_private_key(self):
+        acct = Account.create()
+        client = X402PaymentClient.from_private_key(acct.key.hex())
+        assert client.address == acct.address
+        client.close()
+
+    def test_address(self, client, agent_key):
+        assert client.address == agent_key.address
+        assert client.address.startswith("0x")
+
+    def test_context_manager(self):
+        acct = Account.create()
+        with X402PaymentClient.from_private_key(acct.key.hex()) as client:
+            assert client.address == acct.address
+
+
+class TestX402PaymentResult:
+    def test_success_result(self):
+        result = X402PaymentResult(
+            success=True,
+            payment_id="pay-123",
+            tx_hash="0xabc",
+            network="eip155:84532",
+            amount_usdc=0.01,
+        )
+        d = result.to_dict()
+        assert d["success"] is True
+        assert d["payment_id"] == "pay-123"
+        assert d["tx_hash"] == "0xabc"
+
+    def test_failure_result(self):
+        result = X402PaymentResult(
+            success=False,
+            error="Insufficient funds",
+        )
+        assert result.to_dict()["success"] is False
+        assert "Insufficient" in result.to_dict()["error"]
