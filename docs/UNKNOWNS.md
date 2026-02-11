@@ -2,30 +2,70 @@
 
 Questions that need answers before implementation.
 
+**Last Updated:** 2026-02-10 19:35 EST
+
+---
+
+## ✅ Resolved (Research Complete)
+
+### AP2 Mandates (Basic Structure)
+- ✅ **Mandate format:** Pydantic BaseModels (JSON-serializable), documented in `src/ap2/types/mandate.py`
+- ✅ **Cryptographic primitives:** JWT (RS256/ES256K) for merchant signatures, sd-jwt-vc for user authorization
+- ✅ **Reference implementations:** Available at https://github.com/google-agentic-commerce/AP2 (Python samples)
+
+### bagman (Architecture)
+- ✅ **API patterns:** Documented in `examples/secret_manager.py` and `examples/session_keys.py`
+- ✅ **1Password integration:** Native backend support via `op` CLI
+- ✅ **Output sanitization:** Regex-based pattern matching in `examples/sanitizer.py`
+- ✅ **Author reputation:** zak.eth (@0xzak) - legitimate developer, 211 GitHub followers, active in AI agent + crypto space
+- ✅ **Security model:** Defense-in-depth layers documented
+
+---
+
 ## Critical (Blocking Implementation)
 
-### AP2 Mandates
-- [ ] What is the exact mandate format? (JSON schema? Custom structure?)
-- [ ] What cryptographic primitives for signing? (ECDSA? EdDSA? Other?)
-- [ ] Who verifies mandates? (bagman? payment processor? both?)
-- [ ] How does revocation work? (On-chain? Off-chain registry? CRL?)
-- [ ] Are there reference implementations we can use?
-- [ ] Where are mandates stored? (Centralized DB? Blockchain? Hybrid?)
+### AP2 Signing Implementation
+- [ ] **JWT signing library:** What Python library for merchant JWT signatures? (PyJWT? python-jose? jwcrypto?)
+- [ ] **Key format for JWT:** RS256 (RSA)? ES256K (secp256k1)? Which to use?
+- [ ] **sd-jwt-vc implementation:** What library for user verifiable credentials? (Reference implementation available?)
+- [ ] **Key generation:** How to generate signing key pairs? (openssl? library-specific?)
+- [ ] **Key storage:** Store in 1Password via bagman, but what format? (PEM? JWK?)
 
-**Research source:** https://github.com/google/agent-payments-protocol
+**Next step:** Read AP2 sample code in `samples/python/scenarios/a2a/human-present/` for signing examples
 
-### bagman
-- [ ] What is the API for requesting session keys?
-- [ ] How are spend limits enforced? (Client-side? Server validation? Blockchain?)
-- [ ] What format are session keys? (Standard? Custom?)
-- [ ] How does key rotation work?
-- [ ] What happens when limits are exceeded? (Error codes? Exceptions?)
-- [ ] How does it integrate with 1Password? (Storage format? Access patterns?)
-- [ ] How is output sanitization implemented? (Regex? AST parsing?)
-- [ ] Who is zak.eth/@0xzak? (Author reputation check)
-- [ ] Any known vulnerabilities or issues?
+### AP2 Mandate Verification
+- [ ] **Who verifies mandates?** Agent-side before payment? Merchant-side? Payment processor? All three?
+- [ ] **Verification process:** Just signature check? Or also expiry, spending limits, etc.?
+- [ ] **Failed verification:** What happens? Error codes? Exceptions? Retry logic?
 
-**Research source:** https://github.com/zscole/bagman-... (full URL from X post)
+**Next step:** Read AP2 docs on verification flow
+
+### AP2 Mandate Revocation
+- [ ] **Revocation mechanism:** CRL (Certificate Revocation List)? On-chain registry? Off-chain database?
+- [ ] **Propagation time:** Instant? Eventually consistent?
+- [ ] **In-flight transactions:** What happens to transactions already initiated when mandate revoked?
+- [ ] **Revocation format:** Another signed credential? API call? Smart contract transaction?
+
+**Research source:** https://github.com/google-agentic-commerce/AP2 (check docs/)
+
+### AP2 Mandate Storage
+- [ ] **Storage location:** Where do signed mandates live? (On-chain? Off-chain database? IPFS? Hybrid?)
+- [ ] **Retention policy:** How long to keep mandates? (Until expiry? Forever for audit? Configurable?)
+- [ ] **Access control:** Who can read mandates? (User? Agent? Merchant? Payment processor? Public?)
+- [ ] **Query interface:** How to retrieve mandates by ID? By user? By date range?
+- [ ] **Privacy considerations:** Payment Mandate contains sensitive data - how to protect while maintaining verifiability?
+- [ ] **Backup/recovery:** If storage fails, are mandates recoverable? Where are backups?
+
+**Research source:** AP2 samples may show storage patterns
+
+### bagman + AP2 Integration
+- [ ] **Session key to mandate connection:** How do bagman session keys connect to AP2 mandate signing?
+- [ ] **Spend limit enforcement:** bagman provides session keys with limits, but who/what enforces? (Client checks? Smart contract? Payment processor?)
+- [ ] **Session key format:** ERC-4337 keys? Standard Ethereum keys? What's the actual format?
+- [ ] **Key rotation with active mandates:** What happens to signed mandates when session key rotates?
+- [ ] **Error handling:** When bagman denies session key (over limit), what does agent do? Retry? Wait? Ask for approval?
+
+**Research source:** https://github.com/zscole/bagman-skill + AP2 integration docs
 
 ### x402 + AP2 Integration
 - [ ] Is there a standard way to attach AP2 mandates to x402 payments?
@@ -56,10 +96,16 @@ Questions that need answers before implementation.
 - [ ] Grace period for in-flight transactions when key expires?
 
 ### Budget State Management
-- [ ] Where is current budget balance tracked? (bagman? blockchain? both?)
-- [ ] Real-time consistency vs. eventual consistency?
-- [ ] How to handle concurrent transactions? (locking? optimistic concurrency?)
-- [ ] Sync mechanism if tracked in multiple places?
+**Key insight from research:** AP2 mandates are **stateless** - they define authorization rules but don't track spending. Need separate system for "spent $X of $Y budget".
+
+- [ ] **Storage location:** Where to track current balance? (Database? Redis? Blockchain state?)
+- [ ] **Update mechanism:** How to decrement balance atomically when payment succeeds?
+- [ ] **Consistency model:** Real-time (strong consistency)? Eventual consistency? Trade-offs?
+- [ ] **Concurrent transactions:** Two payments at same time - how to prevent race conditions? (Pessimistic locking? Optimistic with retry?)
+- [ ] **Failure recovery:** Payment fails after decrementing balance - how to rollback?
+- [ ] **Audit sync:** How to ensure budget state matches actual on-chain transactions?
+
+**Architecture decision needed:** Separate budget tracker service? Or extend bagman? Or use smart contract state?
 
 ### Mandate Management Interface
 - [ ] Existing tooling for Josh to create/manage mandates?
@@ -98,31 +144,55 @@ Questions that need answers before implementation.
 
 ## Research Plan
 
-**Session 1: bagman Deep Dive**
-1. Read full documentation
-2. Review source code on GitHub
-3. Check author reputation
-4. Test locally (if safe)
-5. Document API and capabilities
+### ✅ Completed (2026-02-10)
 
-**Session 2: AP2 Specification**
-1. Read complete AP2 spec
-2. Study reference implementations
-3. Understand mandate format
-4. Understand verification process
-5. Understand revocation mechanism
+**Session 1: Payment Infrastructure Overview**
+- ✅ Researched ACP, AP2, x402, Stripe Machine Payments
+- ✅ Identified three complementary protocols
+- ✅ Documented in `docs/ARCHITECTURE.md`
 
-**Session 3: Integration Points**
-1. Research A2A x402 extension
-2. Check Stripe Machine Payments + AP2 status
-3. Map integration points
-4. Identify gaps we need to build ourselves
+**Session 2: bagman Security Layer**
+- ✅ Read full documentation
+- ✅ Checked author reputation
+- ✅ Documented API patterns and security model
+- ✅ Findings in `docs/BAGMAN_RESEARCH.md`
 
-**Session 4: Architecture Update**
-1. Update ARCHITECTURE.md with findings
-2. Remove unknowns that are now known
-3. Add new questions discovered during research
-4. Refine user flows with actual APIs
+**Session 3: AP2 Mandate Structures**
+- ✅ Read AP2 protocol documentation
+- ✅ Found reference implementations
+- ✅ Documented three mandate types (Intent, Cart, Payment)
+- ✅ Findings in `docs/AP2_RESEARCH.md`
+
+---
+
+### 🔄 Next Sessions
+
+**Session 4: AP2 Signing Implementation (next)**
+1. Read AP2 sample code (`samples/python/scenarios/a2a/human-present/`)
+2. Find JWT signing implementation (library, key format)
+3. Find sd-jwt-vc signing implementation
+4. Document exact code patterns
+5. Create signing test script
+
+**Session 5: Budget Tracking Architecture**
+1. Design separate state management system
+2. Choose storage (Redis? PostgreSQL? Smart contract?)
+3. Design atomic update patterns
+4. Design concurrent transaction handling
+5. Document in `docs/BUDGET_TRACKING.md`
+
+**Session 6: Stripe + AP2 Integration Check**
+1. Review Stripe Machine Payments docs (when accessible)
+2. Check for native AP2 support
+3. Design verification flow if we need to build it
+4. Test with Stripe sandbox (if available)
+
+**Session 7: Proof of Concept**
+1. Install AP2 types: `uv pip install git+https://github.com/google-agentic-commerce/AP2.git@main`
+2. Install bagman: `clawhub install bagman`
+3. Create test Intent Mandate
+4. Sign with test keys
+5. Make $0.01 test payment (Josh → Ada)
 
 ---
 
