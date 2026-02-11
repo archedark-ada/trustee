@@ -2,15 +2,28 @@
 
 **Delegated payment infrastructure for AI agents.**
 
-Cryptographically enforced spending delegation: Human sets bounds → Agent operates within them → Full audit trail.
+Cryptographically enforced spending delegation: Human sets bounds → Agent operates within them → Full audit trail. Real crypto payments on Base via x402 protocol.
 
 > Built by [@archedark_ada](https://github.com/archedark-ada) (autonomous AI agent), supervised by [@archedark](https://github.com/archedark)
+
+## Status
+
+| Component | Status | Description |
+|-----------|--------|-------------|
+| **Mandate System** | ✅ Complete | EIP-712 signed spending authorizations |
+| **Budget Tracking** | ✅ Complete | Per-tx, daily, and total limits with atomic writes |
+| **x402 Payments** | ✅ Complete | Real USDC payments on Base via Coinbase facilitator |
+| **Bagman Security** | ✅ Complete | Session-based key management with auto-expiry |
+| **Audit Trail** | ✅ Complete | Append-only JSONL event logging |
+| **48 tests** | ✅ Passing | Full coverage across all modules |
+
+**First testnet payment:** Feb 10, 2026 — $0.001 USDC on Base Sepolia ([view on Basescan](https://sepolia.basescan.org/token/0x036cbd53842c5426634e7929541ec2318f3dcf7e?a=0x273326453960864fba4d2f6cf09d65fa13e45297))
 
 ## The Problem
 
 Current AI agent payment approaches are broken:
 
-1. **"Give the agent a hot wallet"** → Security disaster. Keys get leaked through prompt injection, memory extraction, or output exposure. (See: @owockibot compromised in 5 days)
+1. **"Give the agent a hot wallet"** → Security disaster. Keys leak through prompt injection, memory extraction, or output exposure.
 2. **"Human approves every transaction"** → No real autonomy. Defeats the purpose of autonomous agents.
 
 ## The Solution
@@ -18,25 +31,154 @@ Current AI agent payment approaches are broken:
 **Trustee** is the middle path: **delegated autonomy with cryptographic enforcement**.
 
 ```
-Josh creates mandate → Ada verifies signature → Ada spends within bounds → Full audit trail
+Josh creates mandate → Bagman creates session → Ada pays within bounds → Full audit trail
 ```
 
-- Agent gets **session keys** (time-limited, spend-limited), never root wallet keys
-- Spending limits are **cryptographically signed** (EIP-712 typed data)
-- **Budget tracking** enforces per-transaction, daily, and total limits
-- **Audit trail** logs every operation (append-only JSONL)
-- Mandate tampering is **mathematically detectable** (signature verification)
+Even if the agent is compromised, the attacker gets:
+- A session that expires in **minutes** (not permanent key access)
+- Per-transaction spending caps (e.g., **$0.01 max per payment**)
+- Total session budget (e.g., **$1 max total**)
+- The root private key is **never exposed** to the agent
 
 ## Quick Start
 
 ```bash
 # Install
+git clone https://github.com/archedark-publishing/trustee.git
 cd trustee
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-# Run the demo
+# Run the demo (mock payments, no wallet needed)
 trustee demo
+```
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                      Trustee                         │
+├──────────┬──────────┬─────────────┬─────────────────┤
+│ Mandate  │ Bagman   │ x402 Client │ Audit           │
+│ Module   │ Security │             │ Trail           │
+│          │          │             │                 │
+│ EIP-712  │ Session  │ Real USDC   │ Append-only     │
+│ signing  │ keys     │ on Base     │ JSONL           │
+│ & verify │ 1Pass    │ via SDK     │                 │
+├──────────┼──────────┼─────────────┤                 │
+│          │  Budget Tracker        │                 │
+│          │  Per-tx / Daily / Total│                 │
+└──────────┴───────────────────────┴─────────────────┘
+```
+
+### The Payment Flow
+
+```
+1. Human creates mandate (spending authorization, EIP-712 signed)
+2. Bagman loads wallet key from 1Password into time-limited session
+3. Agent receives BagmanSigner (can sign, but never sees the key)
+4. Agent hits x402-protected endpoint → gets 402 Payment Required
+5. x402 SDK signs EIP-3009 TransferWithAuthorization
+6. Coinbase facilitator verifies and settles USDC on Base
+7. Budget tracker records spend, audit trail logs everything
+8. Session expires → key wiped from memory
+```
+
+### Modules
+
+| Module | Purpose |
+|--------|---------|
+| `mandate.py` | EIP-712 signed spending authorizations |
+| `bagman.py` | Session-based key management (1Password → time-limited sessions) |
+| `x402_client.py` | Real x402 payments via official Coinbase SDK |
+| `budget.py` | Spending state tracking with atomic writes & file locking |
+| `payment.py` | Payment orchestration (verify → check → pay → record) |
+| `audit.py` | Append-only event log for accountability |
+| `cli.py` | Command-line interface for all operations |
+
+## Bagman: Secure Key Management
+
+The agent **never** sees the private key. Instead:
+
+```python
+from trustee.bagman import Bagman, SessionConfig
+from trustee.x402_client import X402PaymentClient, X402Config, Network
+
+# Create a time-limited session (key loaded from 1Password)
+bagman = Bagman()
+session = bagman.create_session(
+    op_item="trustee-wallet",
+    op_vault="MyVault",
+    config=SessionConfig(
+        max_spend_usd=5.0,      # Total session cap
+        max_per_tx_usd=0.10,    # Per-transaction limit
+        ttl_seconds=1800,        # 30 minute session
+    ),
+)
+
+# Agent gets a signer (never sees the key!)
+client = X402PaymentClient.from_bagman_session(
+    bagman=bagman,
+    session_id=session.session_id,
+    config=X402Config(network=Network.BASE_SEPOLIA),
+)
+
+# Make a real payment
+result = client.pay(url="https://api.example.com/data")
+
+# When done, destroy session (key wiped from memory)
+bagman.destroy_session(session.session_id)
+```
+
+## x402: Real Crypto Payments
+
+Trustee uses the [x402 protocol](https://x402.org) for HTTP-native payments:
+
+```python
+from trustee.x402_client import X402PaymentClient, X402Config, Network
+
+# Direct key access (for testing)
+client = X402PaymentClient.from_private_key(
+    private_key="0x...",
+    config=X402Config(network=Network.BASE_SEPOLIA),
+)
+
+# Hit any x402-protected endpoint
+result = client.pay(url="https://api.example.com/data")
+# result.success → True
+# result.tx_hash → "0x..." (on-chain proof)
+# result.network → "eip155:84532"
+```
+
+Supports:
+- **Base Sepolia** (testnet): `eip155:84532`
+- **Base Mainnet** (production): `eip155:8453`
+- **USDC** stablecoin via EIP-3009 TransferWithAuthorization
+- Coinbase public facilitator at `x402.org/facilitator`
+
+## Security Model
+
+**Protects against:**
+- ✅ **Compromised agent** — Session keys with minutes-long expiry, not root wallet
+- ✅ **Prompt injection** — Can't exceed mandate/session limits even if manipulated
+- ✅ **Credential leaks** — Keys never stored in files; 1Password → memory → wiped
+- ✅ **Overspending** — Per-tx + daily + total limits, cryptographically + budget enforced
+- ✅ **Mandate tampering** — EIP-712 signature verification catches any modification
+
+**Trust assumptions:**
+- 1Password service account token is secure
+- Delegator's private key remains secure
+- Budget state file integrity (future: on-chain verification)
+
+## CLI
+
+```bash
+trustee create     # Create a signed spending mandate
+trustee verify     # Verify mandate signature & validity
+trustee pay        # Execute payment against a mandate
+trustee budget     # Check spending status
+trustee audit      # View audit trail
+trustee demo       # Run full demo flow
 ```
 
 ## Demo Output
@@ -72,73 +214,24 @@ trustee demo
 🎉 Demo complete! The agent never had access to the delegator's private key.
 ```
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────┐
-│                    Trustee                       │
-├──────────┬──────────┬──────────┬────────────────┤
-│ Mandate  │ Budget   │ Payment  │ Audit          │
-│ Module   │ Tracker  │ Executor │ Trail          │
-│          │          │          │                │
-│ EIP-712  │ Per-tx   │ x402     │ Append-only    │
-│ signing  │ Daily    │ protocol │ JSONL          │
-│ & verify │ Total    │ (mock)   │                │
-└──────────┴──────────┴──────────┴────────────────┘
-         ↑                ↑
-    AP2 mandates    Stripe Machine
-    (authorization)  Payments (execution)
-```
-
-### Modules
-
-| Module | Purpose | Status |
-|--------|---------|--------|
-| `mandate.py` | EIP-712 signed spending authorizations | ✅ Working |
-| `budget.py` | Spending state tracking with atomic writes | ✅ Working |
-| `payment.py` | Payment orchestration (verify → check → pay → record) | ✅ Working (mock x402) |
-| `audit.py` | Append-only event log for accountability | ✅ Working |
-| `cli.py` | Command-line interface for all operations | ✅ Working |
-
-## CLI Commands
-
-```bash
-trustee create     # Create a signed spending mandate
-trustee verify     # Verify mandate signature & validity
-trustee pay        # Execute payment against a mandate
-trustee budget     # Check spending status
-trustee audit      # View audit trail
-trustee demo       # Run full demo flow
-```
-
-## Security Model
-
-**Protects against:**
-- ✅ Compromised agent (session keys, not root keys)
-- ✅ Prompt injection (agent can't exceed mandate limits even if manipulated)
-- ✅ Accidental credential leaks (keys never stored in workspace files)
-- ✅ Overspending (cryptographic + budget enforcement)
-- ✅ Mandate tampering (EIP-712 signature verification)
-
-**Relies on:**
-- Delegator's private key remaining secure
-- Honest budget tracker state (future: on-chain verification)
-
 ## Roadmap
 
-- [x] **Phase 0**: Core mandate + budget + payment + audit (this release)
-- [ ] **Phase 1**: Real x402 payment integration via Stripe Machine Payments
-- [ ] **Phase 2**: bagman integration for secure key management
-- [ ] **Phase 3**: AP2 mandate protocol integration
-- [ ] **Phase 4**: On-chain budget verification
+- [x] **Phase 0**: Core mandate + budget + audit trail
+- [x] **Phase 1**: Real x402 payments via Coinbase facilitator (Base Sepolia)
+- [x] **Phase 2**: Bagman secure key management (1Password + session keys)
+- [ ] **Phase 3**: Mainnet deployment (Stripe crypto approved, ready to switch)
+- [ ] **Phase 4**: AP2 mandate protocol integration
+- [ ] **Phase 5**: On-chain budget verification
 
 ## Tech Stack
 
 - **Python 3.11+** with type hints
 - **eth-account** for EIP-712 signing
+- **x402 SDK v2.0.0** (Coinbase) for payment protocol
+- **1Password CLI** (`op`) for secure key storage
 - **Click** for CLI
 - **Pydantic** for data validation
-- **pytest** for testing (20/20 passing)
+- **pytest** — 48 tests passing
 
 ## Why "Trustee"?
 
