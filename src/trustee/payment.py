@@ -164,19 +164,34 @@ class PaymentExecutor:
             },
         )
 
-        reservation = self.budget.authorize_and_reserve(
-            mandate_id=mandate.mandate_id,
-            tx_id=tx_id,
-            amount_usd=request.amount_usd,
-            merchant=request.merchant,
-            description=request.description,
-            max_total_usd=mandate.spending_limit.max_total_usd,
-            max_per_tx_usd=mandate.spending_limit.max_per_tx_usd,
-            daily_limit_usd=mandate.spending_limit.daily_limit_usd,
-            idempotency_key=intent_id,
-            category=request.category,
-            merchant_endpoint=request.merchant_endpoint,
-        )
+        try:
+            reservation = self.budget.authorize_and_reserve(
+                mandate_id=mandate.mandate_id,
+                tx_id=tx_id,
+                amount_usd=request.amount_usd,
+                merchant=request.merchant,
+                description=request.description,
+                max_total_usd=mandate.spending_limit.max_total_usd,
+                max_per_tx_usd=mandate.spending_limit.max_per_tx_usd,
+                daily_limit_usd=mandate.spending_limit.daily_limit_usd,
+                idempotency_key=intent_id,
+                category=request.category,
+                merchant_endpoint=request.merchant_endpoint,
+            )
+        except Exception as exc:
+            self.audit.log(
+                EventType.SPENDING_DENIED,
+                mandate_id=mandate.mandate_id,
+                amount_usd=request.amount_usd,
+                merchant=request.merchant,
+                success=False,
+                reason=f"Budget store error: {exc}",
+            )
+            return PaymentResult(
+                success=False,
+                reason=f"Budget store error: {exc}",
+                amount_usd=request.amount_usd,
+            )
         if not reservation.allowed or reservation.tx is None:
             self.audit.log(
                 EventType.SPENDING_DENIED,
@@ -249,7 +264,10 @@ class PaymentExecutor:
             payment_error = f"Payment execution error: {type(e).__name__}: {e}"
 
         if payment_error is not None:
-            self.budget.finalize_transaction(tx_id=tx_id, success=False)
+            try:
+                self.budget.finalize_transaction(tx_id=tx_id, success=False)
+            except Exception as exc:
+                payment_error = f"{payment_error}; finalize rollback error: {exc}"
             self.audit.log(
                 EventType.PAYMENT_FAILED,
                 mandate_id=mandate.mandate_id,
@@ -266,11 +284,28 @@ class PaymentExecutor:
                 amount_usd=request.amount_usd,
             )
 
-        finalized = self.budget.finalize_transaction(
-            tx_id=tx_id,
-            success=True,
-            x402_payment_id=x402_id,
-        )
+        try:
+            finalized = self.budget.finalize_transaction(
+                tx_id=tx_id,
+                success=True,
+                x402_payment_id=x402_id,
+            )
+        except Exception as exc:
+            self.audit.log(
+                EventType.PAYMENT_FAILED,
+                mandate_id=mandate.mandate_id,
+                amount_usd=request.amount_usd,
+                merchant=request.merchant,
+                success=False,
+                reason=f"Budget finalize error: {exc}",
+                details={"tx_id": tx_id, "idempotency_key": intent_id},
+            )
+            return PaymentResult(
+                success=False,
+                tx_id=tx_id,
+                reason=f"Budget finalize error: {exc}",
+                amount_usd=request.amount_usd,
+            )
         self.audit.log(
             EventType.PAYMENT_COMPLETED,
             mandate_id=mandate.mandate_id,

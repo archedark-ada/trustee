@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import logging
 import os
 import time
 from contextlib import contextmanager
@@ -13,6 +14,8 @@ from typing import Protocol
 
 from .mandate import normalize_address, _normalize_hex32
 from .storage import ensure_private_dir, ensure_private_file
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_REGISTRY_STATE_PATH = Path.home() / ".trustee" / "ap2_registry_state.json"
@@ -96,6 +99,12 @@ class LocalMandateRegistry:
                 issuers.discard(normalized_issuer)
             trusted[normalized_agent] = sorted(issuers)
             self._save_state(state)
+        logger.info(
+            "ap2_registry_action action=set_trusted_issuer agent=%s issuer=%s allowed=%s",
+            normalized_agent,
+            normalized_issuer,
+            allowed,
+        )
 
     def is_trusted_issuer(self, agent: str, issuer: str) -> bool:
         normalized_agent = normalize_address(agent)
@@ -113,6 +122,11 @@ class LocalMandateRegistry:
             state = self._load_state()
             state.setdefault("agent_paused", {})[normalized_agent] = bool(paused)
             self._save_state(state)
+        logger.warning(
+            "ap2_registry_action action=set_agent_paused agent=%s paused=%s",
+            normalized_agent,
+            paused,
+        )
 
     def is_agent_paused(self, agent: str) -> bool:
         normalized_agent = normalize_address(agent)
@@ -162,6 +176,13 @@ class LocalMandateRegistry:
             by_agent = state.setdefault("mandates_by_agent", {})
             by_agent.setdefault(normalized_agent, []).append(normalized_mandate_hash)
             self._save_state(state)
+        logger.info(
+            "ap2_registry_action action=issue mandate_hash=%s agent=%s issuer=%s expires_at=%s",
+            normalized_mandate_hash,
+            normalized_agent,
+            normalized_issuer,
+            expires_at,
+        )
 
         return _pseudo_tx_hash("issue", normalized_mandate_hash)
 
@@ -181,6 +202,11 @@ class LocalMandateRegistry:
                 raise ValueError(f"Mandate already revoked: {normalized_mandate_hash}")
             record["revoked_at"] = int(time.time())
             self._save_state(state)
+        logger.warning(
+            "ap2_registry_action action=revoke mandate_hash=%s issuer=%s",
+            normalized_mandate_hash,
+            normalized_issuer,
+        )
 
         return _pseudo_tx_hash("revoke", normalized_mandate_hash)
 

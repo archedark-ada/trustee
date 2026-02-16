@@ -170,21 +170,21 @@
 ## Phase 4: Hardening and Production Readiness
 
 ### 4.1 Security Tests
-- [ ] Forged signature test.
-- [ ] Untrusted issuer test.
-- [ ] Cross-chain replay rejection test.
-- [ ] Expired mandate boundary tests.
-- [ ] Cache poisoning attempt tests.
+- [x] Forged signature test.
+- [x] Untrusted issuer test.
+- [x] Cross-chain replay rejection test.
+- [x] Expired mandate boundary tests.
+- [x] Cache poisoning attempt tests.
 
 ### 4.2 Logging and Audit
-- [ ] Emit structured decision logs for every validation result.
-- [ ] Ensure logs include `mandate_hash`, `issuer`, `agent`, reason code, and tx context.
-- [ ] Ensure pause/kill-switch actions are logged.
+- [x] Emit structured decision logs for every validation result.
+- [x] Ensure logs include `mandate_hash`, `issuer`, `agent`, reason code, and tx context.
+- [x] Ensure pause/kill-switch actions are logged.
 
 ### 4.3 Staging Validation
-- [ ] Staging outage simulation: RPC down -> fail closed.
-- [ ] Staging metadata retrieval failure -> fail closed.
-- [ ] Staging budget store failure -> fail closed.
+- [x] Staging outage simulation: RPC down -> fail closed.
+- [x] Staging metadata retrieval failure -> fail closed.
+- [x] Staging budget store failure -> fail closed.
 
 ### 4.4 Mainnet Verification
 - [ ] Execute one full mainnet happy-path transaction under mandate.
@@ -200,10 +200,10 @@
 
 ## Cross-Cutting Decisions (v1 Locked)
 
-- [ ] Multi-signature mandates deferred to v2.
-- [ ] Mandate inheritance/delegation deferred to v2.
-- [ ] Analytics product features deferred; structured logs enabled now.
-- [ ] Supported scope locked to Base mainnet USDC x402 path only.
+- [x] Multi-signature mandates deferred to v2.
+- [x] Mandate inheritance/delegation deferred to v2.
+- [x] Analytics product features deferred; structured logs enabled now.
+- [x] Supported scope locked to Base mainnet USDC x402 path only.
 
 ---
 
